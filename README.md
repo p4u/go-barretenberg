@@ -1,124 +1,121 @@
-# Go-Noir
+# go-barretenberg
 
-Go bindings for Noir (v1.0.0-beta.19) using the official Aztec Barretenberg backend.
+Go bindings for Barretenberg (Noir's backend) using official Aztec libraries.
 
-This project allows Go developers to generate and verify ZK proofs (UltraHonk) for Noir circuits. It uses a **statically linked** Rust FFI bridge, making the resulting Go binaries highly portable.
+This project allows Go developers to generate and verify ZK proofs (UltraHonk) for Noir circuits with **maximum performance** using a statically linked Native backend.
 
 ## 1. Prerequisites
 
-- **Go**: `1.21+`
-- **Rust**: `1.85.1+` (to build the FFI bridge)
-- **Noir/Nargo**: `v1.0.0-beta.19`
+- **Go** `1.25+`
+- **Rust**
+- **Noir/Nargo**
 
-## 2. Install the `bb` Binary
+## 2. Quick Start (Native Mode)
 
-The library requires the `bb` (Barretenberg) binary at runtime. 
+In Native mode, the proving logic is compiled into your Go binary. **No external binaries (like `bb`) are required at runtime.**
 
-### Option A: Official Installer (Recommended)
+### Step 1: Install the Go Module
 ```bash
-curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-up/main/install | bash
-bbup -v 3.0.0-nightly.20260102
+go get github.com/p4u/go-barretenberg
 ```
 
-### Option B: From Source
+### Step 2: Download the Precompiled Static Library
+Download the library for your architecture (Linux x86_64) into your project directory:
 ```bash
-git clone https://github.com/AztecProtocol/aztec-packages
-cd aztec-packages/barretenberg/cpp
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make bb -j$(nproc)
-sudo cp bin/bb /usr/local/bin/
+curl -L https://github.com/p4u/go-barretenberg/releases/latest/download/libbarretenberg_ffi-linux-x86_64.a -o libbarretenberg_ffi.a
 ```
 
-## 3. Setup and Build
-
+### Step 3: Build your project
+Link against the downloaded library:
 ```bash
-git clone https://github.com/vocdoni/go-noir
-cd go-noir
-make build-rust
+export CGO_LDFLAGS="-L$(pwd)"
+go build .
 ```
 
-## 4. API Reference
+---
 
-### Types
+## 2. API Usage
 
-#### `ProofSystemSettings`
-Configures the UltraHonk proving system.
-```go
-type ProofSystemSettings struct {
-	IpaAccumulation           bool   `json:"ipa_accumulation"`           // true for recursive/rollup proofs
-	OracleHashType            string `json:"oracle_hash_type"`            // "poseidon2" (default), "keccak", "blake2s"
-	DisableZk                 bool   `json:"disable_zk"`                 // true for faster, non-private proofs
-	OptimizedSolidityVerifier bool   `json:"optimized_solidity_verifier"` // true for gas-optimized EVM verification
-}
-```
-
-### Functions
-
-#### `DefaultSettings() ProofSystemSettings`
-Returns the standard settings for UltraHonk (Poseidon2, ZK enabled).
-
-#### `ProveUltraHonk(bytecode string, witnessJson string, settings ProofSystemSettings) ([]byte, error)`
-Generates an UltraHonk proof.
-- `bytecode`: Base64-encoded gzipped ACIR bytecode.
-- `witnessJson`: JSON string containing the witness (e.g., `{"witness": ["0x01", "0x02"]}`).
-
-#### `ProveUltraHonkPoseidon(bytecode string, witnessJson string) ([]byte, error)`
-Convenience wrapper for `ProveUltraHonk` using `DefaultSettings()`.
-
-#### `GetVkUltraHonk(bytecode string, settings ProofSystemSettings) ([]byte, error)`
-Returns the Verification Key (VK) for the circuit and settings.
-
-#### `VerifyUltraHonk(proof []byte, vk []byte, settings ProofSystemSettings) bool`
-Verifies an UltraHonk proof using the provided VK and settings.
-
-#### `InitSRS(bytecode string) error`
-Initializes the Structured Reference String. *Note: Usually handled automatically by the backend.*
-
-## 5. Usage Example
+By default, the library uses the **Native** backend for best performance.
 
 ```go
 package main
 
 import (
 	"fmt"
-	"github.com/vocdoni/go-noir"
+	"github.com/p4u/go-barretenberg"
 )
 
 func main() {
-	// 1. Prepare inputs
-	bytecode := "H4sIAAAAAAAA..." 
+	// 1. Prepare your circuit bytecode (gzipped base64) and witness JSON
+	bytecode := "H4sIAAAAAAA..." 
 	witnessJson := `{"witness": ["0x03", "0x09"]}`
 
-	// 2. Configure Settings (or use DefaultSettings())
-	settings := noir.DefaultSettings()
-	settings.OracleHashType = "keccak" // Example: use Keccak for EVM compatibility
+	// 2. Configure Proof System Settings
+	settings := barretenberg.DefaultSettings()
+	settings.OracleHashType = barretenberg.HashKeccak // Example: use Keccak for EVM compatibility
+    settings.DisableZk = false
 
 	// 3. Generate Proof
-	proof, err := noir.ProveUltraHonk(bytecode, witnessJson, settings)
+	proof, err := barretenberg.ProveUltraHonk(bytecode, witnessJson, settings)
 	if err != nil {
 		panic(err)
 	}
 
-	// 4. Get VK
-	vk, err := noir.GetVkUltraHonk(bytecode, settings)
-	if err != nil {
-		panic(err)
-	}
+	// 4. Get Verification Key
+	vk, _ := barretenberg.GetVkUltraHonk(bytecode, settings)
 
 	// 5. Verify
-	if noir.VerifyUltraHonk(proof, vk, settings) {
-		fmt.Println("Verification Successful!")
+	if barretenberg.VerifyUltraHonk(proof, vk, settings) {
+		fmt.Println("Proof is valid!")
 	}
 }
 ```
 
-## 6. Project Integration
+---
 
-1.  **Add Module**: `go get github.com/vocdoni/go-noir`
-2.  **Linking**: Ensure `libnoir_ffi.a` is built. Set `CGO_LDFLAGS="-L/path/to/libnoir_ffi/target/release"` when building your app.
-3.  **Runtime**: Ensure `bb` is in your `$PATH` or set `BB_BINARY_PATH`.
+## 3. Proof System Settings
+
+The `ProofSystemSettings` struct allows you to configure every aspect of the UltraHonk proving system.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `IpaAccumulation` | `bool` | Set to `true` for recursive/rollup-compatible proofs. This uses the IPA accumulation scheme. |
+| `OracleHashType` | `OracleHashType` | The hash function used by the prover's oracle. Use the predefined constants: `HashPoseidon2`, `HashKeccak`, or `HashBlake2s`. |
+| `DisableZk` | `bool` | If `true`, Zero-Knowledge is disabled. Proving is faster and uses less memory, but the proof reveals the witness. |
+| `OptimizedSolidityVerifier`| `bool` | If `true`, the verification key and proof are optimized for deployment on the EVM. |
+
+### Oracle Hash Constants
+- `barretenberg.HashPoseidon2` (Default)
+- `barretenberg.HashKeccak` (EVM compatible)
+- `barretenberg.HashBlake2s`
+
+---
+
+## 4. Alternative: Pipe Mode (Binary Worker)
+
+If you prefer to use the `bb` binary as a separate worker process (for memory isolation), install `bb` via `bbup` and switch modes:
+
+```go
+import "github.com/p4u/go-barretenberg"
+
+func init() {
+    barretenberg.SetBackendType(barretenberg.BackendPipe)
+}
+```
+
+## 5. Building from Source (Advanced)
+
+If you need to build the Rust bridge yourself (requires Rust 1.85.1+):
+
+```bash
+git clone https://github.com/p4u/go-barretenberg
+cd go-barretenberg
+make build-rust-native # For Native support
+```
 
 ## Architecture
 
-Proving logic is delegated to a persistent `bb` worker process via high-performance msgpack pipes. This ensures memory isolation (C++ crashes won't kill your Go app) and simplifies distribution through static linking of the FFI bridge.
+This library bridges Go to Aztec's `barretenberg-rs`. 
+- **Native Backend**: Links the Barretenberg C++ engine directly into your Go app via a static Rust shim. Highest speed, lowest latency.
+- **Pipe Backend**: Spawns a `bb` subprocess. Best for stability if you are worried about C++ memory usage affecting your main Go process.

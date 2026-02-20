@@ -31,6 +31,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "barretenberg_ffi"
+version = "0.1.0"
+dependencies = [
+ "barretenberg-rs",
+ "base64",
+ "flate2",
+ "hex",
+ "once_cell",
+ "rmp",
+ "rmp-serde",
+ "rmpv",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -156,24 +174,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset",
-]
-
-[[package]]
-name = "noir_ffi"
-version = "0.1.0"
-dependencies = [
- "barretenberg-rs",
- "base64",
- "flate2",
- "hex",
- "once_cell",
- "rmp",
- "rmp-serde",
- "rmpv",
- "serde",
- "serde_bytes",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]

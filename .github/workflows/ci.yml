@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Noir & BB
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.nargo/bin:$PATH"
+          noirup -v 1.0.0-beta.19
+          
+          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-up/main/install | bash
+          echo "$HOME/.bb" >> $GITHUB_PATH
+          export PATH="$HOME/.bb:$PATH"
+          bbup -v 3.0.0-nightly.20260102
+
+      - name: Build Rust Bridge
+        run: make build-rust
+
+      - name: Run Tests
+        run: make test
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Static Library
+        run: make build-rust
+
+      - name: Create Release Artifacts
+        run: make dist
+
+      - name: Upload Release Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/libbarretenberg_ffi-*.a
+            dist/go-barretenberg-lib-*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

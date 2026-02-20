@@ -1,4 +1,4 @@
-package noir
+package barretenberg
 
 import (
 	"encoding/base64"
@@ -8,8 +8,8 @@ import (
 )
 
 func TestProveVerify(t *testing.T) {
-	// Read bytecode from circuit/target/circuit.json
-	data, err := os.ReadFile("circuit/target/circuit.json")
+	// Read bytecode from testdata/circuit/target/circuit.json
+	data, err := os.ReadFile("testdata/circuit/target/circuit.json")
 	if err != nil {
 		t.Fatalf("failed to read circuit.json: %v", err)
 	}

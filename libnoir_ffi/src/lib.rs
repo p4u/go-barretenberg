@@ -1,34 +1,55 @@
 use std::{ffi::{CStr, CString}, os::raw::c_char, ptr::null_mut};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use barretenberg_rs::{BarretenbergApi, backends::PipeBackend};
+use barretenberg_rs::BarretenbergApi;
+use barretenberg_rs::backends::PipeBackend;
+#[cfg(feature = "native-backend")]
+use barretenberg_rs::backends::FfiBackend;
 use barretenberg_rs::generated_types::{CircuitInput, CircuitInputNoVK, ProofSystemSettings, CircuitProveResponse, Command};
 use base64::{Engine as _, engine::general_purpose};
 use std::io::Read;
 use flate2::read::GzDecoder;
 use std::collections::BTreeMap;
 
-static BB_API: OnceCell<std::sync::Mutex<BarretenbergApi<PipeBackend>>> = OnceCell::new();
+enum ApiEnum {
+    Pipe(BarretenbergApi<PipeBackend>),
+    #[cfg(feature = "native-backend")]
+    Native(BarretenbergApi<FfiBackend>),
+}
 
-fn get_api() -> Result<std::sync::MutexGuard<'static, BarretenbergApi<PipeBackend>>, String> {
+static BB_API: OnceCell<std::sync::Mutex<ApiEnum>> = OnceCell::new();
+
+fn get_api() -> Result<std::sync::MutexGuard<'static, ApiEnum>, String> {
     let api_mutex = BB_API.get_or_init(|| {
-        let bb_path = std::env::var("BB_BINARY_PATH").unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            format!("{}/.bb/bb", home)
-        });
+        let backend_type = std::env::var("BB_BACKEND_TYPE").unwrap_or_else(|_| "native".to_string());
         
-        let backend = match PipeBackend::new(&bb_path, Some(16)) {
-            Ok(b) => b,
-            Err(e) => {
-                // We return a dummy Mutex if initialization fails, 
-                // and we'll handle the error during locking if needed.
-                // However, PipeBackend::new currently returns Result.
-                // Since OnceCell init cannot easily return Result, 
-                // we'll let it panic if absolutely critical, or handle it better.
-                panic!("Failed to initialize Barretenberg backend at {}: {}", bb_path, e);
+        let api = if backend_type.to_lowercase() == "native" {
+            #[cfg(feature = "native-backend")]
+            {
+                let backend = FfiBackend::new().expect("Failed to create FfiBackend");
+                ApiEnum::Native(BarretenbergApi::new(backend))
             }
+            #[cfg(not(feature = "native-backend"))]
+            {
+                // Fallback to Pipe if native requested but not compiled in, 
+                // OR panic if you want to be strict. Let's fallback for better DX.
+                let bb_path = std::env::var("BB_BINARY_PATH").unwrap_or_else(|_| {
+                    let home = std::env::var("HOME").unwrap_or_default();
+                    format!("{}/.bb/bb", home)
+                });
+                let backend = PipeBackend::new(&bb_path, Some(16)).expect("Failed to create PipeBackend");
+                ApiEnum::Pipe(BarretenbergApi::new(backend))
+            }
+        } else {
+            let bb_path = std::env::var("BB_BINARY_PATH").unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_default();
+                format!("{}/.bb/bb", home)
+            });
+            let backend = PipeBackend::new(&bb_path, Some(16)).expect("Failed to create PipeBackend");
+            ApiEnum::Pipe(BarretenbergApi::new(backend))
         };
-        std::sync::Mutex::new(BarretenbergApi::new(backend))
+        
+        std::sync::Mutex::new(api)
     });
     
     api_mutex.lock().map_err(|e| format!("Mutex lock failed: {}", e))
@@ -152,25 +173,50 @@ struct WitnessMapWrapper(BTreeMap<u32, serde_bytes::ByteBuf>);
 struct StackItemWrapper(u32, WitnessMapWrapper);
 
 fn call_bb(cmd: Command) -> Result<barretenberg_rs::generated_types::Response, String> {
-    let mut api = get_api()?;
+    let mut api_guard = get_api()?;
     
-    match cmd {
-        Command::CircuitComputeVk(data) => {
-            api.circuit_compute_vk(data.circuit, data.settings)
-                .map(barretenberg_rs::generated_types::Response::CircuitComputeVkResponse)
-                .map_err(|e| e.to_string())
+    match &mut *api_guard {
+        ApiEnum::Pipe(api) => {
+            match cmd {
+                Command::CircuitComputeVk(data) => {
+                    api.circuit_compute_vk(data.circuit, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitComputeVkResponse)
+                        .map_err(|e| e.to_string())
+                }
+                Command::CircuitProve(data) => {
+                    api.circuit_prove(data.circuit, &data.witness, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitProveResponse)
+                        .map_err(|e| e.to_string())
+                }
+                Command::CircuitVerify(data) => {
+                    api.circuit_verify(&data.verification_key, data.public_inputs, data.proof, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitVerifyResponse)
+                        .map_err(|e| e.to_string())
+                }
+                _ => Err("Unsupported command".to_string())
+            }
         }
-        Command::CircuitProve(data) => {
-            api.circuit_prove(data.circuit, &data.witness, data.settings)
-                .map(barretenberg_rs::generated_types::Response::CircuitProveResponse)
-                .map_err(|e| e.to_string())
+        #[cfg(feature = "native-backend")]
+        ApiEnum::Native(api) => {
+            match cmd {
+                Command::CircuitComputeVk(data) => {
+                    api.circuit_compute_vk(data.circuit, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitComputeVkResponse)
+                        .map_err(|e| e.to_string())
+                }
+                Command::CircuitProve(data) => {
+                    api.circuit_prove(data.circuit, &data.witness, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitProveResponse)
+                        .map_err(|e| e.to_string())
+                }
+                Command::CircuitVerify(data) => {
+                    api.circuit_verify(&data.verification_key, data.public_inputs, data.proof, data.settings)
+                        .map(barretenberg_rs::generated_types::Response::CircuitVerifyResponse)
+                        .map_err(|e| e.to_string())
+                }
+                _ => Err("Unsupported command".to_string())
+            }
         }
-        Command::CircuitVerify(data) => {
-            api.circuit_verify(&data.verification_key, data.public_inputs, data.proof, data.settings)
-                .map(barretenberg_rs::generated_types::Response::CircuitVerifyResponse)
-                .map_err(|e| e.to_string())
-        }
-        _ => Err("Unsupported command".to_string())
     }
 }
 
@@ -294,10 +340,10 @@ pub extern "C" fn bb_verify_ultrahonk(
         let prove_resp: CircuitProveResponse = rmp_serde::from_slice(proof_msgpack)
             .map_err(|e| format!("Failed to deserialize proof response: {}", e))?;
 
-        let mut api = get_api()?;
-        
-        let verified = api.circuit_verify(&vk_bytes, prove_resp.public_inputs, prove_resp.proof, settings)
-            .map_err(|e| format!("Failed to verify: {}", e))?;
+        let verified = match call_bb(Command::CircuitVerify(barretenberg_rs::generated_types::CircuitVerify::new(vk_bytes, prove_resp.public_inputs, prove_resp.proof, settings)))? {
+            barretenberg_rs::generated_types::Response::CircuitVerifyResponse(r) => r,
+            _ => return Err("Unexpected response".to_string()),
+        };
             
         Ok(verified.verified)
     })();

@@ -1,5 +1,5 @@
 [package]
-name = "noir_ffi"
+name = "barretenberg_ffi"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-# Use local barretenberg-rs without FFI
+# Use local barretenberg-rs
 barretenberg-rs = { path = "../aztec-packages/barretenberg/rust/barretenberg-rs", default-features = false, features = ["native"] }
 
 serde = { version = "1", features = ["derive"] }
@@ -21,3 +21,7 @@ rmp = "0.8"
 hex = "0.4"
 serde_bytes = "0.11"
 rmpv = "1.0"
+
+[features]
+default = []
+native-backend = ["barretenberg-rs/ffi"]

@@ -1,5 +1,5 @@
-#ifndef NOIR_FFI_H
-#define NOIR_FFI_H
+#ifndef BARRETENBERG_FFI_H
+#define BARRETENBERG_FFI_H
 
 #include <stddef.h>
 #include <stdint.h>
