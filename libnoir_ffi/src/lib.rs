@@ -19,6 +19,34 @@ enum ApiEnum {
 
 static BB_API: OnceCell<std::sync::Mutex<ApiEnum>> = OnceCell::new();
 
+fn find_bb_binary() -> String {
+    if let Ok(p) = std::env::var("BB_BINARY_PATH") {
+        return p;
+    }
+    
+    // Check if 'bb' is in PATH
+    if which::which("bb").is_ok() {
+        return "bb".to_string();
+    }
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    
+    // Check ~/.aztec/bin/bb (new installer)
+    let aztec_path = format!("{}/.aztec/bin/bb", home);
+    if std::path::Path::new(&aztec_path).exists() {
+        return aztec_path;
+    }
+
+    // Check ~/.bb/bb (old installer)
+    let bb_path = format!("{}/.bb/bb", home);
+    if std::path::Path::new(&bb_path).exists() {
+        return bb_path;
+    }
+
+    // Default to 'bb' and hope for the best
+    "bb".to_string()
+}
+
 fn get_api() -> Result<std::sync::MutexGuard<'static, ApiEnum>, String> {
     let api_mutex = BB_API.get_or_init(|| {
         let backend_type = std::env::var("BB_BACKEND_TYPE").unwrap_or_else(|_| "native".to_string());
@@ -31,20 +59,12 @@ fn get_api() -> Result<std::sync::MutexGuard<'static, ApiEnum>, String> {
             }
             #[cfg(not(feature = "native-backend"))]
             {
-                // Fallback to Pipe if native requested but not compiled in, 
-                // OR panic if you want to be strict. Let's fallback for better DX.
-                let bb_path = std::env::var("BB_BINARY_PATH").unwrap_or_else(|_| {
-                    let home = std::env::var("HOME").unwrap_or_default();
-                    format!("{}/.bb/bb", home)
-                });
+                let bb_path = find_bb_binary();
                 let backend = PipeBackend::new(&bb_path, Some(16)).expect("Failed to create PipeBackend");
                 ApiEnum::Pipe(BarretenbergApi::new(backend))
             }
         } else {
-            let bb_path = std::env::var("BB_BINARY_PATH").unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_default();
-                format!("{}/.bb/bb", home)
-            });
+            let bb_path = find_bb_binary();
             let backend = PipeBackend::new(&bb_path, Some(16)).expect("Failed to create PipeBackend");
             ApiEnum::Pipe(BarretenbergApi::new(backend))
         };

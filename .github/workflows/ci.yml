@@ -8,58 +8,33 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  build-and-test:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
+      - name: Build and Test with Docker
+        # The Docker build now runs 'go test' internally. 
+        # If tests fail, the build fails.
+        run: docker build -t go-barretenberg-builder .
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Noir & BB
+      - name: Export Artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.nargo/bin:$PATH"
-          noirup -v 1.0.0-beta.19
+          mkdir -p dist_raw
+          docker run --rm -v $(pwd)/dist_raw:/out go-barretenberg-builder
           
-          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-up/main/install | bash
-          echo "$HOME/.bb" >> $GITHUB_PATH
-          export PATH="$HOME/.bb:$PATH"
-          bbup -v 3.0.0-nightly.20260102
-
-      - name: Build Rust Bridge
-        run: make build-rust
-
-      - name: Run Tests
-        run: make test
-
-  release:
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Static Library
-        run: make build-rust
-
-      - name: Create Release Artifacts
-        run: make dist
+          VERSION=${GITHUB_REF#refs/tags/}
+          ARCH=$(uname -m)
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          
+          mkdir -p dist
+          cp dist_raw/libbarretenberg_ffi.a dist/libbarretenberg_ffi-$OS-$ARCH.a
+          cp dist_raw/barretenberg_ffi.h dist/
+          tar -czvf dist/go-barretenberg-lib-$OS-$ARCH.tar.gz -C dist libbarretenberg_ffi-$OS-$ARCH.a barretenberg_ffi.h
 
       - name: Upload Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |

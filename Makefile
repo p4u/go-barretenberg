@@ -1,4 +1,4 @@
-.PHONY: all build build-rust build-rust-native test clean dist download-lib
+.PHONY: all build build-rust build-rust-native test clean dist download-lib docker-dist
 
 # Default version for downloads
 VERSION ?= latest
@@ -23,12 +23,20 @@ clean:
 	cd libnoir_ffi && cargo clean
 	rm -rf testdata/circuit/target dist/
 
-# Prepare artifacts for GitHub Release
+# Prepare artifacts for GitHub Release (Build locally)
 dist: build-rust
 	mkdir -p dist
 	cp libnoir_ffi/target/release/libbarretenberg_ffi.a dist/libbarretenberg_ffi-$(OS)-$(ARCH).a
 	cp libnoir_ffi/barretenberg_ffi.h dist/
 	tar -czvf dist/go-barretenberg-lib-$(OS)-$(ARCH).tar.gz -C dist libbarretenberg_ffi-$(OS)-$(ARCH).a barretenberg_ffi.h
+
+# Build using Docker and extract artifacts
+docker-dist:
+	docker build -t go-barretenberg-builder .
+	mkdir -p libnoir_ffi/target/release
+	docker run --rm -v $(PWD)/libnoir_ffi/target/release:/out go-barretenberg-builder
+	# Ensure the header is also in the root for linking convenience if needed
+	cp libnoir_ffi/target/release/barretenberg_ffi.h libnoir_ffi/
 
 # Download precompiled static library from GitHub
 download-lib:

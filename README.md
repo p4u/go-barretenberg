@@ -4,13 +4,7 @@ Go bindings for Barretenberg (Noir's backend) using official Aztec libraries.
 
 This project allows Go developers to generate and verify ZK proofs (UltraHonk) for Noir circuits with **maximum performance** using a statically linked Native backend.
 
-## 1. Prerequisites
-
-- **Go** `1.25+`
-- **Rust**
-- **Noir/Nargo**
-
-## 2. Quick Start (Native Mode)
+## 1. Quick Start (Native Mode)
 
 In Native mode, the proving logic is compiled into your Go binary. **No external binaries (like `bb`) are required at runtime.**
 
@@ -94,7 +88,15 @@ The `ProofSystemSettings` struct allows you to configure every aspect of the Ult
 
 ## 4. Alternative: Pipe Mode (Binary Worker)
 
-If you prefer to use the `bb` binary as a separate worker process (for memory isolation), install `bb` via `bbup` and switch modes:
+If you prefer to use the `bb` binary as a separate worker process (for memory isolation), install `bb` via `aztec-up` and switch modes:
+
+```bash
+curl -L https://install.aztec.network | bash
+# Then ensure bb is installed
+bbup -v 3.0.0-nightly.20260102
+```
+
+Switch in your Go code:
 
 ```go
 import "github.com/p4u/go-barretenberg"
@@ -106,13 +108,14 @@ func init() {
 
 ## 5. Building from Source (Advanced)
 
-If you need to build the Rust bridge yourself (requires Rust 1.85.1+):
+The easiest way to build the library yourself is using Docker. This ensures a consistent environment and runs the full test suite during the build.
 
 ```bash
 git clone https://github.com/p4u/go-barretenberg
 cd go-barretenberg
-make build-rust-native # For Native support
+make docker-dist
 ```
+This will place the verified `libbarretenberg_ffi.a` in `libnoir_ffi/target/release/`.
 
 ## Architecture
 
