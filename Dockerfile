@@ -2,13 +2,15 @@
 FROM ubuntu:24.04 AS builder
 
 # 1. Install system dependencies
+# We install clang and lld as Barretenberg is heavily optimized for Clang
 RUN apt-get update && apt-get install -y \
     curl \
     git \
     build-essential \
     cmake \
     ninja-build \
-    libstdc++-13-dev \
+    clang \
+    lld \
     pkg-config \
     libssl-dev \
     unzip \
@@ -33,9 +35,17 @@ RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/AztecProt
     && git sparse-checkout set barretenberg
 
 # 6. Build Barretenberg C++ statically
+# We use Clang and disable the specific warning that fails in GCC
 WORKDIR /aztec-packages/barretenberg/cpp
 RUN mkdir build && cd build \
-    && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DBARRETENBERG_STATIC=ON -DARCH=native \
+    && cmake .. -G Ninja \
+       -DCMAKE_C_COMPILER=clang \
+       -DCMAKE_CXX_COMPILER=clang++ \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DBARRETENBERG_STATIC=ON \
+       -DARCH=native \
+       -DMOBILE=ON \
+       -DCMAKE_CXX_FLAGS="-Wno-error=missing-field-initializers" \
     && ninja barretenberg
 
 # 7. Build Rust Bridge
@@ -45,13 +55,14 @@ ENV BB_LIB_DIR=/aztec-packages/barretenberg/cpp/build/lib
 RUN cd libnoir_ffi && cargo build --release --features native-backend
 
 # 8. Merge libraries into a single static archive
-RUN ar -M <<EOT
-CREATE libbarretenberg_ffi.a
-ADDLIB /app/libnoir_ffi/target/release/libbarretenberg_ffi.a
-ADDLIB /aztec-packages/barretenberg/cpp/build/lib/libbarretenberg.a
-SAVE
-END
-EOT
+# Using /bin/bash to ensure the heredoc for ar -M works correctly
+RUN /bin/bash -c "ar -M <<EOT \n\
+CREATE libbarretenberg_ffi.a \n\
+ADDLIB /app/libnoir_ffi/target/release/libbarretenberg_ffi.a \n\
+ADDLIB /aztec-packages/barretenberg/cpp/build/lib/libbarretenberg.a \n\
+SAVE \n\
+END \n\
+EOT"
 
 # 9. Run Tests inside Docker
 COPY go.mod ./
@@ -62,7 +73,6 @@ COPY testdata ./testdata
 RUN cd testdata/circuit && nargo compile
 
 # Run Go tests using the library we just built
-# We point CGO to the merged library we created in step 8
 RUN CGO_LDFLAGS="-L/app -lbarretenberg_ffi -lm -ldl -lpthread" go test -v .
 
 # Final stage: Export artifacts
