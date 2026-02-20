@@ -1,0 +1,26 @@
+# Go
+*.out
+*.test
+*.prof
+bin/
+vendor/
+
+# Rust
+target/
+libnoir_ffi/target/
+**/*.rs.bk
+
+# Noir
+circuit/target/
+circuit/proofs/
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary/Debug
+*.log
+/volumes/repos/vocdoni/go-noir/libnoir_ffi/noir_ffi.h.gch
